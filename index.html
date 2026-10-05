@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schema a punto croce</title>
+<style>
+:root{--bg:#f7f8fa;--ink:#1f2933;--mute:#5f6b7a;--line:#d5dae1;--accent:#b4323a;--panel:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#171b21;--ink:#e8ebef;--mute:#9aa5b1;--line:#323a45;--accent:#e06a72;--panel:#1f242c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+h1{font:600 28px/1.2 Georgia,serif;margin:0 0 4px}
+p.sub{color:var(--mute);margin:0 0 20px;max-width:60ch}
+.ctl{display:flex;flex-wrap:wrap;gap:16px;align-items:end;background:var(--panel);border:1px solid var(--line);padding:14px;border-radius:6px}
+label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--mute)}
+input[type=range]{width:180px;accent-color:var(--accent)}
+button,.file{font:inherit;background:var(--accent);color:#fff;border:0;padding:8px 14px;border-radius:4px;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#wrap{margin-top:20px;overflow:auto;border:1px solid var(--line);background:#fff;max-height:70vh}
+canvas{display:block}
+#info{margin:16px 0 8px;color:var(--mute)}
+#leg{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;padding:0;list-style:none}
+#leg li{display:flex;align-items:center;gap:8px;font-size:14px}
+.sw{width:22px;height:22px;border:1px solid var(--line);display:grid;place-items:center;font-size:13px;border-radius:3px}
+</style>
+</head>
+<body>
+<main>
+<h1>Da immagine a punto croce</h1>
+<p class="sub">Carica un'immagine: lo schema viene creato nel tuo browser e l'immagine non viene inviata a nessun server.</p>
+<div class="ctl">
+  <label>Immagine<input id="file" type="file" accept="image/*"></label>
+  <label>Larghezza: <span id="wv">60</span> punti<input id="w" type="range" min="20" max="150" value="60"></label>
+  <label>Colori: <span id="kv">12</span><input id="k" type="range" min="2" max="30" value="12"></label>
+  <button id="dl" disabled>Scarica PNG</button>
+</div>
+<div id="wrap"><canvas id="out" width="0" height="0"></canvas></div>
+<div id="info">Nessuna immagine caricata.</div>
+<ul id="leg"></ul>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const SYM="●■▲◆★+×○□△◇♥♣♠#@%&ABCDEFGHJKLMNPRSTUVWXYZ".split("");
+let img=null;
+
+$("file").onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const i=new Image();
+  i.onload=()=>{img=i; build()};
+  i.src=URL.createObjectURL(f);
+};
+for(const id of ["w","k"]) $(id).oninput=()=>{$(id+"v").textContent=$(id).value; if(img) build()};
+
+function medianCut(px,k){
+  let boxes=[px];
+  while(boxes.length<k){
+    let bi=-1,br=0,bc=0;
+    boxes.forEach((b,i)=>{
+      if(b.length<2) return;
+      for(let c=0;c<3;c++){
+        let lo=255,hi=0;
+        for(const p of b){ if(p[c]<lo)lo=p[c]; if(p[c]>hi)hi=p[c]; }
+        if(hi-lo>br){br=hi-lo;bi=i;bc=c}
+      }
+    });
+    if(bi<0) break;
+    const b=boxes[bi].sort((p,q)=>p[bc]-q[bc]), m=b.length>>1;
+    boxes.splice(bi,1,b.slice(0,m),b.slice(m));
+  }
+  return boxes.map(b=>[0,1,2].map(c=>Math.round(b.reduce((s,p)=>s+p[c],0)/b.length)));
+}
+function nearest(p,pal){
+  let best=0,bd=1e9;
+  pal.forEach((q,i)=>{
+    const d=(p[0]-q[0])**2+(p[1]-q[1])**2+(p[2]-q[2])**2;
+    if(d<bd){bd=d;best=i}
+  });
+  return best;
+}
+const hex=c=>"#"+c.map(v=>v.toString(16).padStart(2,"0")).join("");
+
+function build(){
+  const w=+$("w").value, k=+$("k").value;
+  const h=Math.max(1,Math.round(w*img.height/img.width));
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const x=c.getContext("2d");
+  x.fillStyle="#fff"; x.fillRect(0,0,w,h); x.drawImage(img,0,0,w,h);
+  const d=x.getImageData(0,0,w,h).data, px=[];
+  for(let i=0;i<d.length;i+=4) px.push([d[i],d[i+1],d[i+2]]);
+  const pal=medianCut(px.slice(),k);
+  const idx=px.map(p=>nearest(p,pal));
+  render(w,h,pal,idx);
+}
+
+function render(w,h,pal,idx){
+  const s=16, cv=$("out"), g=cv.getContext("2d");
+  cv.width=w*s+2; cv.height=h*s+2;
+  g.textAlign="center"; g.textBaseline="middle"; g.font="12px sans-serif";
+  const n=pal.map(()=>0);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    const i=idx[y*w+x], col=pal[i]; n[i]++;
+    g.fillStyle=hex(col); g.fillRect(x*s+1,y*s+1,s,s);
+    g.fillStyle=(0.299*col[0]+0.587*col[1]+0.114*col[2])>140?"#000":"#fff";
+    g.fillText(SYM[i%SYM.length],x*s+1+s/2,y*s+1+s/2+1);
+  }
+  g.strokeStyle="rgba(0,0,0,.35)";
+  for(let x=0;x<=w;x++){g.lineWidth=x%10?.5:1.8;g.beginPath();g.moveTo(x*s+1,1);g.lineTo(x*s+1,h*s+1);g.stroke()}
+  for(let y=0;y<=h;y++){g.lineWidth=y%10?.5:1.8;g.beginPath();g.moveTo(1,y*s+1);g.lineTo(w*s+1,y*s+1);g.stroke()}
+  $("info").textContent=`Schema di ${w} × ${h} punti, ${w*h} punti totali. Le linee più marcate segnano ogni 10 punti.`;
+  $("leg").innerHTML=pal.map((c,i)=>`<li><span class="sw" style="background:${hex(c)};color:${(0.299*c[0]+0.587*c[1]+0.114*c[2])>140?"#000":"#fff"}">${SYM[i%SYM.length]}</span>${hex(c)} · ${n[i]} punti</li>`).join("");
+  $("dl").disabled=false;
+}
+
+$("dl").onclick=()=>$("out").toBlob(b=>{
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(b); a.download="schema-punto-croce.png"; a.click();
+});
+</script>
+</body>
+</html>
